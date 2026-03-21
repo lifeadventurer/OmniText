@@ -79,18 +79,18 @@
       .phrase-label-wrap {
         display: block;
         min-width: 0;
-        overflow: hidden;
+        overflow: visible;
         flex: 1 1 auto;
       }
       .phrase-label-track {
-        display: inline-flex;
-        align-items: center;
-        min-width: max-content;
-        white-space: nowrap;
+        display: block;
+        min-width: 0;
+        white-space: normal;
       }
-      .phrase-label-text,
-      .phrase-label-clone {
-        flex: 0 0 auto;
+      .phrase-label-text {
+        display: block;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
       .phrase-label-gap {
         display: none;
@@ -100,15 +100,32 @@
       .phrase-label-clone {
         display: none;
       }
-      .phrase-button.is-overflowing .phrase-label-track {
+      .phrase-button.measuring-marquee .phrase-label-wrap,
+      .phrase-button.marquee-enabled.is-overflowing .phrase-label-wrap {
+        overflow: hidden;
+      }
+      .phrase-button.measuring-marquee .phrase-label-track,
+      .phrase-button.marquee-enabled.is-overflowing .phrase-label-track {
+        display: inline-flex;
+        align-items: center;
+        min-width: max-content;
+        white-space: nowrap;
+      }
+      .phrase-button.measuring-marquee .phrase-label-text,
+      .phrase-button.measuring-marquee .phrase-label-clone,
+      .phrase-button.marquee-enabled.is-overflowing .phrase-label-text,
+      .phrase-button.marquee-enabled.is-overflowing .phrase-label-clone {
+        flex: 0 0 auto;
+      }
+      .phrase-button.marquee-enabled.is-overflowing .phrase-label-track {
         animation: phrase-marquee var(--marquee-duration, 10s) linear infinite;
       }
-      .phrase-button.is-overflowing .phrase-label-gap,
-      .phrase-button.is-overflowing .phrase-label-clone {
+      .phrase-button.marquee-enabled.is-overflowing .phrase-label-gap,
+      .phrase-button.marquee-enabled.is-overflowing .phrase-label-clone {
         display: inline-block;
       }
-      .phrase-button.is-overflowing:hover .phrase-label-track,
-      .phrase-button.is-overflowing:focus-visible .phrase-label-track {
+      .phrase-button.marquee-enabled.is-overflowing:hover .phrase-label-track,
+      .phrase-button.marquee-enabled.is-overflowing:focus-visible .phrase-label-track {
         animation-play-state: paused;
       }
       @keyframes phrase-marquee {
@@ -120,18 +137,16 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        .phrase-button.is-overflowing .phrase-label-track {
-          animation: none;
-        }
-        .phrase-label-wrap {
+        .phrase-button.marquee-enabled.is-overflowing .phrase-label-wrap {
           overflow: visible;
         }
-        .phrase-label-track {
+        .phrase-button.marquee-enabled.is-overflowing .phrase-label-track {
+          animation: none;
           min-width: 0;
           display: block;
           white-space: normal;
         }
-        .phrase-label-text {
+        .phrase-button.marquee-enabled.is-overflowing .phrase-label-text {
           overflow-wrap: anywhere;
           word-break: break-word;
         }
@@ -193,9 +208,9 @@
         </button>
       </div>
 
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 class="text-xl font-semibold text-gray-700">Saved Phrases</h2>
-        <div class="flex items-center gap-4">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 sm:justify-end">
           <label
             class="flex items-center gap-2 text-sm text-gray-600"
             title="Sort by most used, then recent"
@@ -209,6 +224,13 @@
           >
             <input type="checkbox" id="showUsageToggle" class="h-4 w-4" />
             <span>Show usage</span>
+          </label>
+          <label
+            class="flex items-center gap-2 text-sm text-gray-600"
+            title="Scroll overflowing saved phrases"
+          >
+            <input type="checkbox" id="marqueeToggle" class="h-4 w-4" />
+            <span>Scroll long text</span>
           </label>
         </div>
       </div>
@@ -236,6 +258,7 @@
       const clearAllButton = document.getElementById("clearAllButton");
       const sortByUseToggle = document.getElementById("sortByUseToggle");
       const showUsageToggle = document.getElementById("showUsageToggle");
+      const marqueeToggle = document.getElementById("marqueeToggle");
       let overflowMeasureFrame = 0;
 
       // --- Constants ---
@@ -260,18 +283,20 @@
           return {
             sortByUse: parsed.sortByUse ?? true,
             showUsage: parsed.showUsage ?? true,
+            enableMarquee: parsed.enableMarquee ?? false,
           };
         } catch (_) {
-          return { sortByUse: true, showUsage: true };
+          return { sortByUse: true, showUsage: true, enableMarquee: false };
         }
       }
       function saveSettings(s) {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
       }
       function updateSettingsUI() {
-        const { sortByUse, showUsage } = getSettings();
+        const { sortByUse, showUsage, enableMarquee } = getSettings();
         if (sortByUseToggle) sortByUseToggle.checked = !!sortByUse;
         if (showUsageToggle) showUsageToggle.checked = !!showUsage;
+        if (marqueeToggle) marqueeToggle.checked = !!enableMarquee;
       }
 
       // --- Data Access Layer (with migration) ---
@@ -347,6 +372,7 @@
       }
 
       function syncOverflowingPhraseButtons() {
+        const { enableMarquee } = getSettings();
         const phraseButtons = textListDiv.querySelectorAll(".phrase-button");
         phraseButtons.forEach((button) => {
           const labelWrap = button.querySelector(".phrase-label-wrap");
@@ -354,23 +380,32 @@
           const labelClone = button.querySelector(".phrase-label-clone");
           if (!labelWrap || !labelText || !labelClone) return;
 
+          button.classList.remove("measuring-marquee");
+          button.classList.remove("marquee-enabled");
           button.classList.remove("is-overflowing");
           button.style.removeProperty("--marquee-gap");
           button.style.removeProperty("--marquee-distance");
           button.style.removeProperty("--marquee-duration");
           labelClone.textContent = "";
 
-          const overflows = labelText.scrollWidth > labelWrap.clientWidth + 1;
+          if (!enableMarquee) return;
+
+          button.classList.add("measuring-marquee");
+          const textWidth = Math.ceil(labelText.getBoundingClientRect().width);
+          const availableWidth = Math.floor(labelWrap.clientWidth);
+          const overflows = textWidth > availableWidth + 1;
+          button.classList.remove("measuring-marquee");
           if (!overflows) return;
 
           const gap = Math.max(24, Math.round(labelWrap.clientWidth * 0.12));
-          const distance = labelText.scrollWidth + gap;
+          const distance = textWidth + gap;
           const duration = Math.max(6, Math.min(18, distance / 32));
 
           labelClone.textContent = labelText.textContent;
           button.style.setProperty("--marquee-gap", `${gap}px`);
           button.style.setProperty("--marquee-distance", `${distance}px`);
           button.style.setProperty("--marquee-duration", `${duration}s`);
+          button.classList.add("marquee-enabled");
           button.classList.add("is-overflowing");
         });
       }
@@ -537,6 +572,12 @@
       showUsageToggle.addEventListener("change", (e) => {
         const settings = getSettings();
         settings.showUsage = !!e.target.checked;
+        saveSettings(settings);
+        renderPhraseButtons();
+      });
+      marqueeToggle.addEventListener("change", (e) => {
+        const settings = getSettings();
+        settings.enableMarquee = !!e.target.checked;
         saveSettings(settings);
         renderPhraseButtons();
       });
