@@ -1,4 +1,4 @@
-const CACHE_NAME = "omnitext-cache-v1.0.1"; // A versioned name for your cache
+const CACHE_NAME = "omnitext-cache-v1.0.2"; // A versioned name for your cache
 const ASSETS_TO_CACHE = [
   "./", // Cache the root URL (usually index.html)
   "./index.html", // Explicitly cache index.html

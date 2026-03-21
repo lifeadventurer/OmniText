@@ -2,6 +2,13 @@
 
 All notable changes to OmniText will be documented in this file.
 
+## [v1.0.1] - 2026-03-21
+
+### Fixed
+
+- Bumped the app and service worker cache versions so updated app assets are
+  delivered reliably after deployment
+
 ## [v1.0.0] - 2026-03-21
 
 ### Added
