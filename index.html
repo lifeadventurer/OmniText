@@ -42,6 +42,47 @@
         opacity: 1;
         visibility: visible;
       }
+      #fullScreenTextWrap {
+        width: 100%;
+        max-width: 100%;
+        max-height: 100%;
+        overflow: visible;
+      }
+      #fullScreenTextTrack {
+        display: block;
+        min-width: 0;
+        white-space: normal;
+      }
+      #fullScreenText,
+      #fullScreenTextClone {
+        display: block;
+      }
+      #fullScreenTextGap,
+      #fullScreenTextClone {
+        display: none;
+      }
+      #fullScreenDisplay.measuring-scroll #fullScreenTextWrap,
+      #fullScreenDisplay.vertical-scroll-enabled.is-overflowing #fullScreenTextWrap {
+        overflow: hidden;
+      }
+      #fullScreenDisplay.vertical-scroll-enabled.is-overflowing #fullScreenTextTrack {
+        animation: full-screen-vertical-scroll
+          var(--full-screen-scroll-duration, 14s) linear infinite;
+      }
+      #fullScreenDisplay.vertical-scroll-enabled.is-overflowing #fullScreenTextGap,
+      #fullScreenDisplay.vertical-scroll-enabled.is-overflowing #fullScreenTextClone {
+        display: block;
+      }
+      @keyframes full-screen-vertical-scroll {
+        from {
+          transform: translateY(0);
+        }
+        to {
+          transform: translateY(
+            calc(-1 * var(--full-screen-scroll-distance, 0px))
+          );
+        }
+      }
 
       /* Robust long-word wrapping utility */
       .break-anywhere {
@@ -138,6 +179,23 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
+        #fullScreenDisplay.vertical-scroll-enabled.is-overflowing #fullScreenTextWrap {
+          overflow: visible;
+        }
+        #fullScreenDisplay.vertical-scroll-enabled.is-overflowing #fullScreenTextTrack {
+          animation: none;
+          min-width: 0;
+          display: block;
+          white-space: normal;
+        }
+        #fullScreenDisplay.vertical-scroll-enabled.is-overflowing #fullScreenText {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        #fullScreenTextGap,
+        #fullScreenTextClone {
+          display: none !important;
+        }
         .phrase-button.marquee-enabled.is-overflowing .phrase-label-wrap {
           overflow: visible;
         }
@@ -248,7 +306,17 @@
     </div>
 
     <div id="fullScreenDisplay">
-      <span id="fullScreenText" class="break-anywhere"></span>
+      <div id="fullScreenTextWrap">
+        <div id="fullScreenTextTrack">
+          <span id="fullScreenText" class="break-anywhere"></span>
+          <span id="fullScreenTextGap" aria-hidden="true"></span>
+          <span
+            id="fullScreenTextClone"
+            class="break-anywhere"
+            aria-hidden="true"
+          ></span>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -257,12 +325,21 @@
       const addButton = document.getElementById("addButton");
       const textListDiv = document.getElementById("textList");
       const fullScreenDisplay = document.getElementById("fullScreenDisplay");
+      const fullScreenTextWrap = document.getElementById("fullScreenTextWrap");
+      const fullScreenTextTrack = document.getElementById(
+        "fullScreenTextTrack",
+      );
       const fullScreenText = document.getElementById("fullScreenText");
+      const fullScreenTextGap = document.getElementById("fullScreenTextGap");
+      const fullScreenTextClone = document.getElementById(
+        "fullScreenTextClone",
+      );
       const clearAllButton = document.getElementById("clearAllButton");
       const sortByUseToggle = document.getElementById("sortByUseToggle");
       const showUsageToggle = document.getElementById("showUsageToggle");
       const marqueeToggle = document.getElementById("marqueeToggle");
       let overflowMeasureFrame = 0;
+      let fullScreenMeasureFrame = 0;
 
       // --- Constants ---
       const STORAGE_KEY = "omniTextPhrases"; // kept same for backwards compatibility
@@ -366,12 +443,74 @@
 
         fullScreenText.textContent = text;
         fullScreenDisplay.classList.add("visible");
+        scheduleFullScreenMarquee();
       }
 
       /** Hides the full-screen display. */
       function hideFullScreen() {
         fullScreenDisplay.classList.remove("visible");
+        fullScreenDisplay.classList.remove("measuring-scroll");
+        fullScreenDisplay.classList.remove("vertical-scroll-enabled");
+        fullScreenDisplay.classList.remove("is-overflowing");
+        fullScreenDisplay.style.removeProperty("--full-screen-scroll-distance");
+        fullScreenDisplay.style.removeProperty("--full-screen-scroll-duration");
+        fullScreenTextGap.style.removeProperty("height");
+        fullScreenTextClone.textContent = "";
         fullScreenText.textContent = ""; // Clear text
+      }
+
+      function syncFullScreenMarquee() {
+        const { enableMarquee } = getSettings();
+        fullScreenDisplay.classList.remove("measuring-scroll");
+        fullScreenDisplay.classList.remove("vertical-scroll-enabled");
+        fullScreenDisplay.classList.remove("is-overflowing");
+        fullScreenDisplay.style.removeProperty("--full-screen-scroll-distance");
+        fullScreenDisplay.style.removeProperty("--full-screen-scroll-duration");
+        fullScreenTextGap.style.removeProperty("height");
+        fullScreenTextClone.textContent = "";
+
+        if (
+          !fullScreenDisplay.classList.contains("visible") ||
+          !enableMarquee
+        ) {
+          return;
+        }
+
+        const displayStyles = getComputedStyle(fullScreenDisplay);
+        const availableHeight = Math.floor(
+          fullScreenDisplay.clientHeight -
+            parseFloat(displayStyles.paddingTop) -
+            parseFloat(displayStyles.paddingBottom),
+        );
+        const textHeight = Math.ceil(fullScreenText.getBoundingClientRect().height);
+        const overflows = textHeight > availableHeight + 1;
+        if (!overflows) return;
+
+        const gap = Math.max(48, Math.round(availableHeight * 0.12));
+        const distance = textHeight + gap;
+        const duration = Math.max(12, distance / 30);
+
+        fullScreenTextGap.style.height = `${gap}px`;
+        fullScreenTextClone.textContent = fullScreenText.textContent;
+        fullScreenDisplay.style.setProperty(
+          "--full-screen-scroll-distance",
+          `${distance}px`,
+        );
+        fullScreenDisplay.style.setProperty(
+          "--full-screen-scroll-duration",
+          `${duration}s`,
+        );
+        fullScreenDisplay.classList.add("vertical-scroll-enabled");
+        fullScreenDisplay.classList.add("is-overflowing");
+      }
+
+      function scheduleFullScreenMarquee() {
+        if (fullScreenMeasureFrame)
+          cancelAnimationFrame(fullScreenMeasureFrame);
+        fullScreenMeasureFrame = requestAnimationFrame(() => {
+          fullScreenMeasureFrame = 0;
+          syncFullScreenMarquee();
+        });
       }
 
       function syncOverflowingPhraseButtons() {
@@ -583,15 +722,22 @@
         settings.enableMarquee = !!e.target.checked;
         saveSettings(settings);
         renderPhraseButtons();
+        scheduleFullScreenMarquee();
       });
-      window.addEventListener("resize", scheduleOverflowSync);
+      window.addEventListener("resize", () => {
+        scheduleOverflowSync();
+        scheduleFullScreenMarquee();
+      });
 
       // --- Initial Load ---
       document.addEventListener("DOMContentLoaded", () => {
         updateSettingsUI();
         renderPhraseButtons();
         if (document.fonts && document.fonts.ready) {
-          document.fonts.ready.then(scheduleOverflowSync);
+          document.fonts.ready.then(() => {
+            scheduleOverflowSync();
+            scheduleFullScreenMarquee();
+          });
         }
       });
 
