@@ -54,6 +54,8 @@
       .phrase-item-container {
         display: flex; /* Arrange phrase button and delete button side-by-side */
         align-items: stretch; /* Make buttons same height */
+        min-width: 0;
+        max-width: 100%;
         border-radius: 0.5rem; /* Rounded corners for the container */
         overflow: hidden; /* Clip corners */
         box-shadow:
@@ -65,16 +67,78 @@
       .phrase-button {
         transition: background-color 0.15s ease-in-out;
         flex-grow: 1; /* Allow button to take available space */
+        min-width: 0;
         /* Allow button height to grow with content */
         height: auto;
-        /* Ensure text wraps within the button */
-        white-space: normal;
-        word-wrap: break-word;
         text-align: left; /* Keep text aligned left */
         /* Remove individual shadow, applied to container now */
         /* Remove individual rounded corners on the right */
         border-top-right-radius: 0;
         border-bottom-right-radius: 0;
+      }
+      .phrase-label-wrap {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        flex: 1 1 auto;
+      }
+      .phrase-label-track {
+        display: inline-flex;
+        align-items: center;
+        min-width: max-content;
+        white-space: nowrap;
+      }
+      .phrase-label-text,
+      .phrase-label-clone {
+        flex: 0 0 auto;
+      }
+      .phrase-label-gap {
+        display: none;
+        flex: 0 0 var(--marquee-gap, 2rem);
+        width: var(--marquee-gap, 2rem);
+      }
+      .phrase-label-clone {
+        display: none;
+      }
+      .phrase-button.is-overflowing .phrase-label-track {
+        animation: phrase-marquee var(--marquee-duration, 10s) linear infinite;
+      }
+      .phrase-button.is-overflowing .phrase-label-gap,
+      .phrase-button.is-overflowing .phrase-label-clone {
+        display: inline-block;
+      }
+      .phrase-button.is-overflowing:hover .phrase-label-track,
+      .phrase-button.is-overflowing:focus-visible .phrase-label-track {
+        animation-play-state: paused;
+      }
+      @keyframes phrase-marquee {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(calc(-1 * var(--marquee-distance, 0px)));
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .phrase-button.is-overflowing .phrase-label-track {
+          animation: none;
+        }
+        .phrase-label-wrap {
+          overflow: visible;
+        }
+        .phrase-label-track {
+          min-width: 0;
+          display: block;
+          white-space: normal;
+        }
+        .phrase-label-text {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .phrase-label-gap,
+        .phrase-label-clone {
+          display: none !important;
+        }
       }
 
       /* Styling for the separate delete button */
@@ -172,6 +236,7 @@
       const clearAllButton = document.getElementById("clearAllButton");
       const sortByUseToggle = document.getElementById("sortByUseToggle");
       const showUsageToggle = document.getElementById("showUsageToggle");
+      let overflowMeasureFrame = 0;
 
       // --- Constants ---
       const STORAGE_KEY = "omniTextPhrases"; // kept same for backwards compatibility
@@ -281,6 +346,43 @@
         fullScreenText.textContent = ""; // Clear text
       }
 
+      function syncOverflowingPhraseButtons() {
+        const phraseButtons = textListDiv.querySelectorAll(".phrase-button");
+        phraseButtons.forEach((button) => {
+          const labelWrap = button.querySelector(".phrase-label-wrap");
+          const labelText = button.querySelector(".phrase-label-text");
+          const labelClone = button.querySelector(".phrase-label-clone");
+          if (!labelWrap || !labelText || !labelClone) return;
+
+          button.classList.remove("is-overflowing");
+          button.style.removeProperty("--marquee-gap");
+          button.style.removeProperty("--marquee-distance");
+          button.style.removeProperty("--marquee-duration");
+          labelClone.textContent = "";
+
+          const overflows = labelText.scrollWidth > labelWrap.clientWidth + 1;
+          if (!overflows) return;
+
+          const gap = Math.max(24, Math.round(labelWrap.clientWidth * 0.12));
+          const distance = labelText.scrollWidth + gap;
+          const duration = Math.max(6, Math.min(18, distance / 32));
+
+          labelClone.textContent = labelText.textContent;
+          button.style.setProperty("--marquee-gap", `${gap}px`);
+          button.style.setProperty("--marquee-distance", `${distance}px`);
+          button.style.setProperty("--marquee-duration", `${duration}s`);
+          button.classList.add("is-overflowing");
+        });
+      }
+
+      function scheduleOverflowSync() {
+        if (overflowMeasureFrame) cancelAnimationFrame(overflowMeasureFrame);
+        overflowMeasureFrame = requestAnimationFrame(() => {
+          overflowMeasureFrame = 0;
+          syncOverflowingPhraseButtons();
+        });
+      }
+
       /**
        * Increment usage count for a phrase and persist; refresh list (keeps sort up-to-date)
        */
@@ -338,8 +440,14 @@
             `Show phrase: ${phrase.text}`,
           );
           phraseButton.innerHTML = `
-            <div class="flex items-start justify-between gap-2">
-              <span class="block break-anywhere">${escapeHtml(phrase.text)}</span>
+            <div class="flex items-center justify-between gap-2 min-w-0">
+              <span class="phrase-label-wrap">
+                <span class="phrase-label-track">
+                  <span class="phrase-label-text">${escapeHtml(phrase.text)}</span>
+                  <span class="phrase-label-gap" aria-hidden="true"></span>
+                  <span class="phrase-label-clone" aria-hidden="true"></span>
+                </span>
+              </span>
               ${showUsage ? `<span class=\"shrink-0 text-xs font-semibold bg-black/20 rounded px-1\">×${phrase.count}</span>` : ""}
             </div>`;
           phraseButton.onclick = () => showFullScreen(phrase.text);
@@ -358,6 +466,8 @@
           itemContainer.appendChild(deleteBtn);
           textListDiv.appendChild(itemContainer);
         });
+
+        scheduleOverflowSync();
       }
 
       /** Adds a new phrase to the list (dedupe by exact text). */
@@ -430,11 +540,15 @@
         saveSettings(settings);
         renderPhraseButtons();
       });
+      window.addEventListener("resize", scheduleOverflowSync);
 
       // --- Initial Load ---
       document.addEventListener("DOMContentLoaded", () => {
         updateSettingsUI();
         renderPhraseButtons();
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(scheduleOverflowSync);
+        }
       });
 
       // --- PWA Service Worker Registration ---
