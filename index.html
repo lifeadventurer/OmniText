@@ -42,6 +42,44 @@
         opacity: 1;
         visibility: visible;
       }
+      #fullScreenSpeakButton {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        z-index: 1001;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 9999px;
+        background: rgba(17, 24, 39, 0.7);
+        color: white;
+        padding: 0.65rem 0.95rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        line-height: 1;
+        cursor: pointer;
+        backdrop-filter: blur(10px);
+      }
+      #fullScreenSpeakButton:hover {
+        background: rgba(31, 41, 55, 0.88);
+      }
+      #fullScreenSpeakButton:focus-visible {
+        outline: 2px solid white;
+        outline-offset: 2px;
+      }
+      #fullScreenSpeakButton.hidden {
+        display: none;
+      }
+      #fullScreenSpeakButton .tts-stop-label {
+        display: none;
+      }
+      #fullScreenSpeakButton.is-speaking .tts-speak-label {
+        display: none;
+      }
+      #fullScreenSpeakButton.is-speaking .tts-stop-label {
+        display: inline;
+      }
       #fullScreenTextWrap {
         width: 100%;
         max-width: 100%;
@@ -334,6 +372,16 @@
     </div>
 
     <div id="fullScreenDisplay">
+      <button
+        id="fullScreenSpeakButton"
+        type="button"
+        class="hidden"
+        aria-label="Speak phrase aloud"
+      >
+        <span aria-hidden="true">🔊</span>
+        <span class="tts-speak-label">Speak</span>
+        <span class="tts-stop-label">Stop</span>
+      </button>
       <div id="fullScreenTextWrap">
         <div id="fullScreenTextTrack">
           <span id="fullScreenText" class="break-anywhere"></span>
@@ -362,6 +410,9 @@
       const fullScreenTextClone = document.getElementById(
         "fullScreenTextClone",
       );
+      const fullScreenSpeakButton = document.getElementById(
+        "fullScreenSpeakButton",
+      );
       const clearAllButton = document.getElementById("clearAllButton");
       const sortByUseToggle = document.getElementById("sortByUseToggle");
       const showUsageToggle = document.getElementById("showUsageToggle");
@@ -369,6 +420,10 @@
       const scrollSpeedControls = document.getElementById("scrollSpeedControls");
       const scrollSpeedSlider = document.getElementById("scrollSpeedSlider");
       const scrollSpeedValue = document.getElementById("scrollSpeedValue");
+      const supportsSpeechSynthesis =
+        "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+      let activeUtterance = null;
+      let isSpeaking = false;
       let overflowMeasureFrame = 0;
       let fullScreenMeasureFrame = 0;
 
@@ -430,6 +485,69 @@
           scrollSpeedValue.textContent = getScrollSpeedLabel(scrollSpeed);
         if (scrollSpeedControls)
           scrollSpeedControls.classList.toggle("hidden", !enableMarquee);
+      }
+      function updateSpeakButtonUI() {
+        if (!fullScreenSpeakButton) return;
+        if (!supportsSpeechSynthesis) {
+          fullScreenSpeakButton.classList.add("hidden");
+          return;
+        }
+        fullScreenSpeakButton.classList.toggle(
+          "hidden",
+          !fullScreenDisplay.classList.contains("visible"),
+        );
+        fullScreenSpeakButton.classList.toggle("is-speaking", isSpeaking);
+        fullScreenSpeakButton.setAttribute(
+          "aria-label",
+          isSpeaking ? "Stop speaking" : "Speak phrase aloud",
+        );
+        fullScreenSpeakButton.setAttribute(
+          "title",
+          isSpeaking ? "Stop speaking" : "Speak phrase aloud",
+        );
+      }
+      function stopSpeaking() {
+        if (!supportsSpeechSynthesis) return;
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+          window.speechSynthesis.cancel();
+        }
+        activeUtterance = null;
+        isSpeaking = false;
+        updateSpeakButtonUI();
+      }
+      function speakFullScreenText() {
+        if (!supportsSpeechSynthesis) return;
+        const text = fullScreenText.textContent.trim();
+        if (!text) return;
+
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        activeUtterance = utterance;
+        isSpeaking = true;
+        updateSpeakButtonUI();
+
+        utterance.onend = () => {
+          if (activeUtterance !== utterance) return;
+          activeUtterance = null;
+          isSpeaking = false;
+          updateSpeakButtonUI();
+        };
+        utterance.onerror = () => {
+          if (activeUtterance !== utterance) return;
+          activeUtterance = null;
+          isSpeaking = false;
+          updateSpeakButtonUI();
+        };
+
+        window.speechSynthesis.speak(utterance);
+      }
+      function toggleSpeaking() {
+        if (isSpeaking) {
+          stopSpeaking();
+          return;
+        }
+        speakFullScreenText();
       }
 
       // --- Data Access Layer (with migration) ---
@@ -494,13 +612,16 @@
         // bump usage first (so resort reflects immediately if enabled)
         incrementUsage(text);
 
+        stopSpeaking();
         fullScreenText.textContent = text;
         fullScreenDisplay.classList.add("visible");
+        updateSpeakButtonUI();
         scheduleFullScreenMarquee();
       }
 
       /** Hides the full-screen display. */
       function hideFullScreen() {
+        stopSpeaking();
         fullScreenDisplay.classList.remove("visible");
         fullScreenDisplay.classList.remove("measuring-scroll");
         fullScreenDisplay.classList.remove("vertical-scroll-enabled");
@@ -510,6 +631,7 @@
         fullScreenTextGap.style.removeProperty("height");
         fullScreenTextClone.textContent = "";
         fullScreenText.textContent = ""; // Clear text
+        updateSpeakButtonUI();
       }
 
       function syncFullScreenMarquee() {
@@ -762,6 +884,10 @@
       textInput.addEventListener("keypress", (event) => {
         if (event.key === "Enter") addPhrase();
       });
+      fullScreenSpeakButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleSpeaking();
+      });
       fullScreenDisplay.addEventListener("click", hideFullScreen);
       clearAllButton.addEventListener("click", clearAllPhrases);
       sortByUseToggle.addEventListener("change", (e) => {
@@ -800,6 +926,7 @@
       // --- Initial Load ---
       document.addEventListener("DOMContentLoaded", () => {
         updateSettingsUI();
+        updateSpeakButtonUI();
         renderPhraseButtons();
         if (document.fonts && document.fonts.ready) {
           document.fonts.ready.then(() => {
@@ -808,6 +935,7 @@
           });
         }
       });
+      window.addEventListener("pagehide", stopSpeaking);
 
       // --- PWA Service Worker Registration ---
       if ("serviceWorker" in navigator) {
