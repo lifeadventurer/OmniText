@@ -353,6 +353,29 @@
               <span>Faster</span>
             </div>
           </div>
+          <div
+            id="ttsLanguageControls"
+            class="hidden w-full rounded-lg border border-gray-200 bg-gray-50 p-3 sm:max-w-sm"
+          >
+            <label
+              for="ttsLanguageSelect"
+              class="block text-sm font-medium text-gray-700"
+            >
+              TTS language
+            </label>
+            <select
+              id="ttsLanguageSelect"
+              class="mt-2 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="auto">Auto (browser default)</option>
+            </select>
+            <p
+              id="ttsLanguageHint"
+              class="mt-2 text-xs text-gray-500"
+            >
+              Choose the language/voice group to use for Speak.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -416,13 +439,31 @@
       );
       const scrollSpeedSlider = document.getElementById("scrollSpeedSlider");
       const scrollSpeedValue = document.getElementById("scrollSpeedValue");
+      const ttsLanguageControls = document.getElementById(
+        "ttsLanguageControls",
+      );
+      const ttsLanguageSelect = document.getElementById("ttsLanguageSelect");
+      const ttsLanguageHint = document.getElementById("ttsLanguageHint");
       const reducedMotionQuery =
         "matchMedia" in window
           ? window.matchMedia("(prefers-reduced-motion: reduce)")
           : null;
       const supportsSpeechSynthesis =
         "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+      const DEFAULT_TTS_LANGUAGE = "auto";
+      const FALLBACK_TTS_LANGUAGES = [
+        "en-US",
+        "en-GB",
+        "zh-CN",
+        "zh-TW",
+        "es-ES",
+        "fr-FR",
+        "de-DE",
+        "ja-JP",
+        "ko-KR",
+      ];
       let activeUtterance = null;
+      let availableSpeechVoices = [];
       let isSpeaking = false;
       let overflowMeasureFrame = 0;
       let fullScreenMeasureFrame = 0;
@@ -457,6 +498,7 @@
             showUsage: parsed.showUsage ?? true,
             enableMarquee: parsed.enableMarquee ?? false,
             scrollSpeed: parsed.scrollSpeed ?? 3,
+            ttsLanguage: parsed.ttsLanguage ?? DEFAULT_TTS_LANGUAGE,
           };
         } catch (_) {
           return {
@@ -464,6 +506,7 @@
             showUsage: true,
             enableMarquee: false,
             scrollSpeed: 3,
+            ttsLanguage: DEFAULT_TTS_LANGUAGE,
           };
         }
       }
@@ -484,8 +527,98 @@
       function prefersReducedMotion() {
         return !!reducedMotionQuery && reducedMotionQuery.matches;
       }
+      function normalizeLanguageTag(lang) {
+        return String(lang || "")
+          .trim()
+          .toLowerCase();
+      }
+      function getLanguageDisplayName(lang) {
+        if (!lang) return "Unknown";
+        if ("Intl" in window && typeof Intl.DisplayNames === "function") {
+          try {
+            const displayNames = new Intl.DisplayNames([lang], {
+              type: "language",
+            });
+            const [base] = lang.split("-");
+            const label = displayNames.of(base);
+            if (label) return `${label} (${lang})`;
+          } catch (_) {
+            // Fall through to raw language tag.
+          }
+        }
+        return lang;
+      }
+      function getUniqueVoiceLanguages() {
+        const languages = new Map();
+        [...FALLBACK_TTS_LANGUAGES, ...availableSpeechVoices.map((voice) => voice.lang)]
+          .filter(Boolean)
+          .forEach((lang) => {
+            const normalized = normalizeLanguageTag(lang);
+            if (!normalized || languages.has(normalized)) return;
+            languages.set(normalized, lang);
+          });
+        return [...languages.values()].sort((a, b) => a.localeCompare(b));
+      }
+      function renderTtsLanguageOptions() {
+        if (!ttsLanguageSelect) return;
+        const { ttsLanguage } = getSettings();
+        const options = [DEFAULT_TTS_LANGUAGE, ...getUniqueVoiceLanguages()];
+
+        ttsLanguageSelect.innerHTML = "";
+        options.forEach((lang) => {
+          const option = document.createElement("option");
+          option.value = lang;
+          option.textContent =
+            lang === DEFAULT_TTS_LANGUAGE
+              ? "Auto (browser default)"
+              : getLanguageDisplayName(lang);
+          ttsLanguageSelect.appendChild(option);
+        });
+
+        if (
+          ttsLanguage &&
+          !options.some(
+            (optionLang) =>
+              normalizeLanguageTag(optionLang) === normalizeLanguageTag(ttsLanguage),
+          )
+        ) {
+          const customOption = document.createElement("option");
+          customOption.value = ttsLanguage;
+          customOption.textContent = `${getLanguageDisplayName(ttsLanguage)} (saved)`;
+          ttsLanguageSelect.appendChild(customOption);
+        }
+
+        ttsLanguageSelect.value = ttsLanguage || DEFAULT_TTS_LANGUAGE;
+        if (ttsLanguageHint) {
+          ttsLanguageHint.textContent = availableSpeechVoices.length
+            ? "Choose the language/voice group to use for Speak."
+            : "Voices are still loading from the browser. Auto usually works best until they appear.";
+        }
+      }
+      function refreshSpeechVoices() {
+        if (!supportsSpeechSynthesis) return;
+        availableSpeechVoices = window.speechSynthesis.getVoices();
+        renderTtsLanguageOptions();
+      }
+      function selectVoiceForLanguage(lang) {
+        const normalizedTarget = normalizeLanguageTag(lang);
+        if (!normalizedTarget) return null;
+
+        const exactMatch = availableSpeechVoices.find(
+          (voice) => normalizeLanguageTag(voice.lang) === normalizedTarget,
+        );
+        if (exactMatch) return exactMatch;
+
+        const [targetBase] = normalizedTarget.split("-");
+        return (
+          availableSpeechVoices.find((voice) => {
+            const [voiceBase] = normalizeLanguageTag(voice.lang).split("-");
+            return voiceBase === targetBase;
+          }) || null
+        );
+      }
       function updateSettingsUI() {
-        const { sortByUse, showUsage, enableMarquee, scrollSpeed } =
+        const { sortByUse, showUsage, enableMarquee, scrollSpeed, ttsLanguage } =
           getSettings();
         if (sortByUseToggle) sortByUseToggle.checked = !!sortByUse;
         if (showUsageToggle) showUsageToggle.checked = !!showUsage;
@@ -495,6 +628,11 @@
           scrollSpeedValue.textContent = getScrollSpeedLabel(scrollSpeed);
         if (scrollSpeedControls)
           scrollSpeedControls.classList.toggle("hidden", !enableMarquee);
+        if (ttsLanguageControls)
+          ttsLanguageControls.classList.toggle("hidden", !supportsSpeechSynthesis);
+        if (ttsLanguageSelect && ttsLanguageSelect.value !== ttsLanguage) {
+          ttsLanguageSelect.value = ttsLanguage;
+        }
       }
       function updateSpeakButtonUI() {
         if (!fullScreenSpeakButton) return;
@@ -529,10 +667,16 @@
         if (!supportsSpeechSynthesis) return;
         const text = fullScreenText.textContent.trim();
         if (!text) return;
+        const { ttsLanguage } = getSettings();
 
         window.speechSynthesis.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
+        const selectedLanguage =
+          ttsLanguage && ttsLanguage !== DEFAULT_TTS_LANGUAGE ? ttsLanguage : "";
+        const selectedVoice = selectVoiceForLanguage(selectedLanguage);
+        if (selectedLanguage) utterance.lang = selectedLanguage;
+        if (selectedVoice) utterance.voice = selectedVoice;
         activeUtterance = utterance;
         isSpeaking = true;
         updateSpeakButtonUI();
@@ -1044,6 +1188,12 @@
         renderPhraseButtons();
         scheduleFullScreenMarquee();
       });
+      ttsLanguageSelect.addEventListener("change", (e) => {
+        const settings = getSettings();
+        settings.ttsLanguage = e.target.value || DEFAULT_TTS_LANGUAGE;
+        saveSettings(settings);
+        updateSettingsUI();
+      });
       scrollSpeedSlider.addEventListener("input", (e) => {
         const settings = getSettings();
         settings.scrollSpeed = Number(e.target.value);
@@ -1069,6 +1219,7 @@
 
       // --- Initial Load ---
       document.addEventListener("DOMContentLoaded", () => {
+        refreshSpeechVoices();
         updateSettingsUI();
         updateSpeakButtonUI();
         renderPhraseButtons();
@@ -1080,6 +1231,9 @@
         }
       });
       window.addEventListener("pagehide", stopSpeaking);
+      if (supportsSpeechSynthesis && "onvoiceschanged" in window.speechSynthesis) {
+        window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
+      }
 
       // --- PWA Service Worker Registration ---
       if ("serviceWorker" in navigator) {

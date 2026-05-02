@@ -30,6 +30,9 @@ instantly in full screen for quick and easy communication.
   interaction and resumes shortly after.
 - **Text-to-Speech (TTS):** A browser-native **Speak / Stop** control is shown
   in the fullscreen preview when supported by the browser.
+- **TTS Language Selection:** Choose a preferred speech language/voice group in
+  settings so browser text-to-speech does not always fall back to the default
+  voice.
 - **Reduced Motion Support:** If the user prefers reduced motion, OmniText keeps
   long text manually scrollable without forcing auto-scroll animations.
 - **Progressive Web App (PWA):**
@@ -62,10 +65,14 @@ instantly in full screen for quick and easy communication.
 12. Toggle **Scroll long text** to enable or disable long-text scrolling.
 13. Use the **Scroll speed** slider to adjust scrolling speed when scrolling is
     enabled.
+14. If you use **Speak**, choose a **TTS language** in settings to match the
+    phrase language when your browser offers that voice.
 
 ## Browser Notes
 
 - OmniText is dependency-free and uses browser-native features where possible.
 - Text-to-speech relies on the browser's `speechSynthesis` support, so voice
   quality and available voices may vary by browser and device.
+- TTS language choices only work when your browser/device exposes a compatible
+  voice for that language.
 - If browser TTS is unavailable, the **Speak** control is hidden automatically.
