@@ -2,6 +2,27 @@
 
 All notable changes to OmniText will be documented in this file.
 
+## [v1.1.0] - 2026-05-02
+
+### Added
+
+- TTS language selector in settings so users can choose a browser voice
+  language group instead of always relying on the default speech voice
+- Browser voice discovery for the TTS selector, including async refresh when
+  additional voices load after page startup
+
+### Changed
+
+- Fullscreen Speak now applies the selected TTS language and prefers a matching
+  browser voice when available
+- Service worker cache version bumped so deployed PWAs pick up the updated TTS
+  settings UI and speech behavior more reliably
+
+### Notes
+
+- TTS language selection still depends on the browser or device exposing a
+  compatible voice for the chosen language
+
 ## [v1.0.1] - 2026-03-21
 
 ### Fixed
